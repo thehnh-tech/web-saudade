@@ -5,5 +5,7 @@ dist/
 !.env.example
 .vite/
 *.log
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db

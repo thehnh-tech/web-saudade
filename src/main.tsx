@@ -109,7 +109,13 @@ function App() {
     canvas.height = Math.round(video.videoHeight * ratio);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    ctx.save();
+    if (facingMode === "user") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
     if (!blob) {
@@ -165,7 +171,7 @@ function App() {
 
       <section className="cameraPanel" aria-live="polite">
         {(state === "loading" || state === "camera") && (
-          <video ref={videoRef} className="camera" playsInline muted />
+          <video ref={videoRef} className={`camera ${facingMode === "user" ? "frontCamera" : ""}`} playsInline muted />
         )}
         {state === "preview" || state === "sending" ? (
           <img className="camera" src={preview ?? ""} alt="Captured photo preview" />
