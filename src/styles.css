@@ -79,7 +79,6 @@ button:disabled {
 .brandIcon {
   width: 40px;
   height: 40px;
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   border-radius: 12px;
   box-shadow: 0 10px 24px var(--shadow-color);
 }
