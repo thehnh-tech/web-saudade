@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-type CaptureState = "loading" | "camera" | "preview" | "sending" | "success" | "error";
+type CaptureState = "loading" | "camera" | "review" | "sending" | "success" | "error";
+type CaptureSide = "rear" | "front";
 
 function tokenFromPath() {
   const match = window.location.pathname.match(/\/capture\/([^/]+)/);
@@ -16,20 +17,44 @@ function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const rearPreviewRef = useRef<string | null>(null);
+  const frontPreviewRef = useRef<string | null>(null);
   const [state, setState] = useState<CaptureState>("loading");
   const [message, setMessage] = useState("Opening camera");
-  const [preview, setPreview] = useState<string | null>(null);
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [rearPreview, setRearPreview] = useState<string | null>(null);
+  const [frontPreview, setFrontPreview] = useState<string | null>(null);
+  const [rearBlob, setRearBlob] = useState<Blob | null>(null);
+  const [frontBlob, setFrontBlob] = useState<Blob | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [facingMode, setFacingMode] = useState<CaptureSide>("rear");
+  const [captureSide, setCaptureSide] = useState<CaptureSide>("rear");
 
-  const startCamera = useCallback(async (mode: "environment" | "user") => {
+  const clearPreview = useCallback((side: CaptureSide) => {
+    if (side === "rear" && rearPreviewRef.current) {
+      URL.revokeObjectURL(rearPreviewRef.current);
+      rearPreviewRef.current = null;
+    }
+    if (side === "front" && frontPreviewRef.current) {
+      URL.revokeObjectURL(frontPreviewRef.current);
+      frontPreviewRef.current = null;
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
     setCameraReady(false);
+  }, []);
+
+  const startCamera = useCallback(async (mode: CaptureSide) => {
+    stopCamera();
+    setFacingMode(mode);
+    setState("loading");
+    setMessage(mode === "rear" ? "Rear camera readying" : "Front camera readying");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
-        facingMode: { ideal: mode },
+        facingMode: { ideal: mode === "rear" ? "environment" : "user" },
         width: { ideal: 1440 },
         height: { ideal: 1920 }
       }
@@ -41,8 +66,30 @@ function App() {
     }
     setCameraReady(true);
     setState("camera");
-    setMessage("");
-  }, []);
+    setMessage(mode === "rear" ? "Take the rear shot" : "Take the front shot");
+  }, [stopCamera]);
+
+  const captureFrame = useCallback(async (mode: CaptureSide) => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !cameraReady) return null;
+
+    const maxWidth = 1440;
+    const ratio = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
+    canvas.width = Math.round(video.videoWidth * ratio);
+    canvas.height = Math.round(video.videoHeight * ratio);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.save();
+    if (mode === "front") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+  }, [cameraReady]);
 
   useEffect(() => {
     let mounted = true;
@@ -69,7 +116,7 @@ function App() {
 
       try {
         if (!mounted) return;
-        await startCamera(facingMode);
+        await startCamera("rear");
       } catch (err) {
         const name = err instanceof DOMException ? err.name : "CameraError";
         setState("error");
@@ -82,59 +129,68 @@ function App() {
     boot();
     return () => {
       mounted = false;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      stopCamera();
+      clearPreview("rear");
+      clearPreview("front");
     };
-  }, [publicToken, startCamera]);
+  }, [clearPreview, publicToken, startCamera, stopCamera]);
 
   async function reverseCamera() {
     if (state !== "camera") return;
-    const nextMode = facingMode === "environment" ? "user" : "environment";
-    setFacingMode(nextMode);
-    setMessage("Switching camera");
+    const nextMode: CaptureSide = facingMode === "rear" ? "front" : "rear";
+    setMessage(nextMode === "rear" ? "Switching to rear camera" : "Switching to front camera");
     try {
       await startCamera(nextMode);
+      setCaptureSide(nextMode);
     } catch {
       setMessage("Camera switch failed. Your browser may expose only one camera.");
     }
   }
 
   async function capture() {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !cameraReady) return;
-
-    const maxWidth = 1440;
-    const ratio = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
-    canvas.width = Math.round(video.videoWidth * ratio);
-    canvas.height = Math.round(video.videoHeight * ratio);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.save();
-    if (facingMode === "user") {
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+    if (state !== "camera") return;
+    const blob = await captureFrame(facingMode);
     if (!blob) {
       setState("error");
       setMessage("The photo could not be prepared.");
       return;
     }
-    setPhotoBlob(blob);
-    setPreview(URL.createObjectURL(blob));
-    setState("preview");
+
+    const previewUrl = URL.createObjectURL(blob);
+    if (captureSide === "rear") {
+      clearPreview("rear");
+      rearPreviewRef.current = previewUrl;
+      setRearPreview(previewUrl);
+      setRearBlob(blob);
+      setCaptureSide("front");
+      setMessage("Flip for the front shot");
+      try {
+        await startCamera("front");
+      } catch (err) {
+        setState("error");
+        setMessage(err instanceof Error ? err.message : "Front camera could not be opened.");
+      }
+      return;
+    }
+
+    clearPreview("front");
+    frontPreviewRef.current = previewUrl;
+    setFrontPreview(previewUrl);
+    setFrontBlob(blob);
+    setState("review");
+    setMessage("BeReal pair ready");
+    stopCamera();
   }
 
   async function send() {
-    if (!photoBlob) return;
+    if (!rearBlob || !frontBlob) return;
     setState("sending");
-    setMessage("Sending");
+    setMessage("Sending both shots");
     const form = new FormData();
-    form.append("photo", photoBlob, `saudade-${Date.now()}.jpg`);
+    form.append("photoFront", rearBlob, `saudade-front-${Date.now()}.jpg`);
+    form.append("photoBack", frontBlob, `saudade-back-${Date.now()}.jpg`);
     form.append("captureSource", "camera-canvas");
+    form.append("captureMode", "bereal");
     form.append("captureTimestamp", new Date().toISOString());
 
     const response = await fetch(`${API_URL}/api/capture/${publicToken}/upload`, {
@@ -144,22 +200,32 @@ function App() {
 
     if (response.ok) {
       setState("success");
-      setMessage("Photo sent.");
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      setMessage("Pair sent.");
+      stopCamera();
+      clearPreview("rear");
+      clearPreview("front");
       return;
     }
 
     const body = await response.json().catch(() => ({}));
-    setState("preview");
+    setState("review");
     setMessage(body.message ?? "Upload failed. Try again in a moment.");
   }
 
   function retake() {
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(null);
-    setPhotoBlob(null);
-    setMessage("");
-    setState("camera");
+    clearPreview("rear");
+    clearPreview("front");
+    setRearPreview(null);
+    setFrontPreview(null);
+    setRearBlob(null);
+    setFrontBlob(null);
+    setCaptureSide("rear");
+    setMessage("Opening rear camera");
+    setState("loading");
+    void startCamera("rear").catch(() => {
+      setState("error");
+      setMessage("Camera could not be reopened.");
+    });
   }
 
   return (
@@ -174,10 +240,19 @@ function App() {
 
       <section className="cameraPanel" aria-live="polite">
         {(state === "loading" || state === "camera") && (
-          <video ref={videoRef} className={`camera ${facingMode === "user" ? "frontCamera" : ""}`} playsInline muted />
+          <video ref={videoRef} className={`camera ${facingMode === "front" ? "frontCamera" : ""}`} playsInline muted />
         )}
-        {state === "preview" || state === "sending" ? (
-          <img className="camera" src={preview ?? ""} alt="Captured photo preview" />
+        {state === "review" || state === "sending" ? (
+          <div className="pairPreview">
+            <div className="pairFrame">
+              <span className="pairLabel">Rear</span>
+              <img className="pairImage" src={rearPreview ?? ""} alt="Rear photo preview" />
+            </div>
+            <div className="pairFrame">
+              <span className="pairLabel">Front</span>
+              <img className="pairImage" src={frontPreview ?? ""} alt="Front photo preview" />
+            </div>
+          </div>
         ) : null}
         {state === "camera" && (
           <button className="reverseButton" onClick={reverseCamera} type="button" disabled={!cameraReady}>
@@ -193,13 +268,13 @@ function App() {
       <div className="actions">
         {state === "camera" && (
           <button className="primary" onClick={capture} disabled={!cameraReady}>
-            Capture
+            {captureSide === "rear" ? "Capture rear" : "Capture front"}
           </button>
         )}
-        {state === "preview" && (
+        {state === "review" && (
           <>
-            <button className="secondary" onClick={retake}>Retake</button>
-            <button className="primary" onClick={send}>Send</button>
+            <button className="secondary" onClick={retake}>Retake pair</button>
+            <button className="primary" onClick={send}>Send pair</button>
           </>
         )}
         {state === "sending" && <button className="primary" disabled>Sending...</button>}
