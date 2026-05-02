@@ -165,7 +165,10 @@ function App() {
   return (
     <main className="shell">
       <section className="brand">
-        <p>Saudade</p>
+        <div className="brandIdentity">
+          <img className="brandIcon" src="/icons/apple-touch-icon.png" alt="" aria-hidden="true" />
+          <p>Saudade</p>
+        </div>
         <span>wear the signal</span>
       </section>
 
