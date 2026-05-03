@@ -18,7 +18,6 @@ function App() {
   const publicToken = useMemo(tokenFromPath, []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const primaryPreviewRef = useRef<string | null>(null);
   const secondaryPreviewRef = useRef<string | null>(null);
   const singlePreviewRef = useRef<string | null>(null);
@@ -35,6 +34,7 @@ function App() {
   const [secondaryBlob, setSecondaryBlob] = useState<Blob | null>(null);
   const [singleBlob, setSingleBlob] = useState<Blob | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
   const clearPreview = useCallback((ref: MutableRefObject<string | null>, setter: (value: string | null) => void) => {
     if (ref.current) {
@@ -54,8 +54,10 @@ function App() {
   }, [clearPreview]);
 
   const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
+    setActiveStream((current) => {
+      current?.getTracks().forEach((track) => track.stop());
+      return null;
+    });
     setCameraReady(false);
   }, []);
 
@@ -72,11 +74,7 @@ function App() {
         height: { ideal: 1920 }
       }
     });
-    streamRef.current = stream;
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-    }
+    setActiveStream(stream);
     setCameraReady(true);
     setState("camera");
     setMessage(prompt ?? (facing === "environment" ? "Capture the rear shot" : "Capture the front shot"));
@@ -122,6 +120,18 @@ function App() {
 
     return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
   }, [cameraFacing, cameraReady]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || state !== "camera" || !activeStream) return;
+    video.srcObject = activeStream;
+    void video.play().catch(() => undefined);
+    return () => {
+      if (video.srcObject === activeStream) {
+        video.srcObject = null;
+      }
+    };
+  }, [activeStream, state]);
 
   useEffect(() => {
     let mounted = true;
