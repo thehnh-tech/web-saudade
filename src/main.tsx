@@ -18,6 +18,7 @@ function App() {
   const publicToken = useMemo(tokenFromPath, []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const primaryPreviewRef = useRef<string | null>(null);
   const secondaryPreviewRef = useRef<string | null>(null);
   const singlePreviewRef = useRef<string | null>(null);
@@ -34,7 +35,6 @@ function App() {
   const [secondaryBlob, setSecondaryBlob] = useState<Blob | null>(null);
   const [singleBlob, setSingleBlob] = useState<Blob | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
   const clearPreview = useCallback((ref: MutableRefObject<string | null>, setter: (value: string | null) => void) => {
     if (ref.current) {
@@ -54,11 +54,30 @@ function App() {
   }, [clearPreview]);
 
   const stopCamera = useCallback(() => {
-    setActiveStream((current) => {
-      current?.getTracks().forEach((track) => track.stop());
-      return null;
-    });
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject = null;
+    }
     setCameraReady(false);
+  }, []);
+
+  const acquireStream = useCallback(async (facing: CameraFacing) => {
+    const constraints = [
+      { audio: false, video: { facingMode: { exact: facing }, width: { ideal: 1440 }, height: { ideal: 1920 } } },
+      { audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 1440 }, height: { ideal: 1920 } } },
+      { audio: false, video: { width: { ideal: 1440 }, height: { ideal: 1920 } } }
+    ] as const;
+
+    let lastError: unknown = null;
+    for (const constraint of constraints) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraint);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("Camera could not be opened.");
   }, []);
 
   const startCamera = useCallback(async (facing: CameraFacing, prompt?: string) => {
@@ -66,19 +85,17 @@ function App() {
     setCameraFacing(facing);
     setState("loading");
     setMessage(prompt ?? (facing === "environment" ? "Rear camera readying" : "Front camera readying"));
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: facing },
-        width: { ideal: 1440 },
-        height: { ideal: 1920 }
-      }
-    });
-    setActiveStream(stream);
+    const stream = await acquireStream(facing);
+    streamRef.current = stream;
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = stream;
+      await video.play().catch(() => undefined);
+    }
     setCameraReady(true);
     setState("camera");
     setMessage(prompt ?? (facing === "environment" ? "Capture the rear shot" : "Capture the front shot"));
-  }, [mode, stage, stopCamera]);
+  }, [acquireStream, stopCamera]);
 
   const configureMode = useCallback(async (nextMode: CaptureMode) => {
     setMode(nextMode);
@@ -120,18 +137,6 @@ function App() {
 
     return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
   }, [cameraFacing, cameraReady]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || state !== "camera" || !activeStream) return;
-    video.srcObject = activeStream;
-    void video.play().catch(() => undefined);
-    return () => {
-      if (video.srcObject === activeStream) {
-        video.srcObject = null;
-      }
-    };
-  }, [activeStream, state]);
 
   useEffect(() => {
     let mounted = true;
