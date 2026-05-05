@@ -14,11 +14,44 @@ function tokenFromPath() {
   return match?.[1] ?? "";
 }
 
+function stopStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+function isCameraFacing(value: unknown): value is CameraFacing {
+  return value === "environment" || value === "user";
+}
+
+function waitForVideoDimensions(video: HTMLVideoElement) {
+  if (video.videoWidth > 0 && video.videoHeight > 0) return Promise.resolve(true);
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let timeout = 0;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadedmetadata", finish);
+      video.removeEventListener("loadeddata", finish);
+      video.removeEventListener("playing", finish);
+      resolve(video.videoWidth > 0 && video.videoHeight > 0);
+    };
+
+    video.addEventListener("loadedmetadata", finish, { once: true });
+    video.addEventListener("loadeddata", finish, { once: true });
+    video.addEventListener("playing", finish, { once: true });
+    timeout = window.setTimeout(finish, 900);
+  });
+}
+
 function App() {
   const publicToken = useMemo(tokenFromPath, []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
   const primaryPreviewRef = useRef<string | null>(null);
   const secondaryPreviewRef = useRef<string | null>(null);
   const singlePreviewRef = useRef<string | null>(null);
@@ -53,8 +86,9 @@ function App() {
     setSingleBlob(null);
   }, [clearPreview]);
 
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+  const stopCamera = useCallback((invalidateRequest = true) => {
+    if (invalidateRequest) cameraRequestRef.current += 1;
+    stopStream(streamRef.current);
     streamRef.current = null;
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject = null;
@@ -81,17 +115,51 @@ function App() {
   }, []);
 
   const startCamera = useCallback(async (facing: CameraFacing, prompt?: string) => {
-    stopCamera();
-    setCameraFacing(facing);
+    const requestId = cameraRequestRef.current + 1;
+    cameraRequestRef.current = requestId;
+    stopCamera(false);
     setState("loading");
     setMessage(prompt ?? (facing === "environment" ? "Rear camera readying" : "Front camera readying"));
-    const stream = await acquireStream(facing);
+    let stream: MediaStream;
+    try {
+      stream = await acquireStream(facing);
+    } catch (error) {
+      if (cameraRequestRef.current !== requestId) return;
+      throw error;
+    }
+    if (cameraRequestRef.current !== requestId) {
+      stopStream(stream);
+      return;
+    }
+
     streamRef.current = stream;
+    const actualFacing = stream.getVideoTracks()[0]?.getSettings().facingMode;
+    setCameraFacing(isCameraFacing(actualFacing) ? actualFacing : facing);
+
     const video = videoRef.current;
     if (video) {
       video.srcObject = stream;
-      await video.play().catch(() => undefined);
+      try {
+        await video.play();
+        await waitForVideoDimensions(video);
+      } catch (error) {
+        stopStream(stream);
+        if (streamRef.current === stream) streamRef.current = null;
+        if (video.srcObject === stream) video.srcObject = null;
+        if (error instanceof DOMException && error.name === "AbortError" && cameraRequestRef.current !== requestId) {
+          return;
+        }
+        throw error;
+      }
     }
+
+    if (cameraRequestRef.current !== requestId) {
+      stopStream(stream);
+      if (streamRef.current === stream) streamRef.current = null;
+      if (video?.srcObject === stream) video.srcObject = null;
+      return;
+    }
+
     setCameraReady(true);
     setState("camera");
     setMessage(prompt ?? (facing === "environment" ? "Capture the rear shot" : "Capture the front shot"));
@@ -120,6 +188,7 @@ function App() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !cameraReady) return null;
+    if (!(await waitForVideoDimensions(video))) return null;
 
     const maxWidth = 1440;
     const ratio = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
@@ -228,6 +297,7 @@ function App() {
   }
 
   async function send() {
+    if (state !== "review") return;
     setState("sending");
     setMessage("Sending");
     const form = new FormData();
@@ -290,6 +360,11 @@ function App() {
   const reviewSecondary = mode === "double" ? secondaryPreview : null;
   const reviewPrimaryLabel = mode === "back" ? "Back" : "Rear";
   const reviewSecondaryLabel = "Front";
+  const modeControlsDisabled = state === "loading" || state === "sending";
+  const capturedOverlayPreview =
+    mode === "double" && stage === "secondary" && (state === "loading" || state === "camera")
+      ? primaryPreview
+      : null;
 
   return (
     <main className="shell">
@@ -301,16 +376,50 @@ function App() {
         <span>wear the signal</span>
       </section>
 
-      <div className="modeSwitch" role="tablist" aria-label="Capture mode">
-        <button type="button" className={modeButtonClass("double")} onClick={() => void configureMode("double")}>Double memories</button>
-        <button type="button" className={modeButtonClass("front")} onClick={() => void configureMode("front")}>Front</button>
-        <button type="button" className={modeButtonClass("back")} onClick={() => void configureMode("back")}>Back</button>
+      <div className="modeSwitch" role="radiogroup" aria-label="Capture mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "double"}
+          className={modeButtonClass("double")}
+          disabled={modeControlsDisabled}
+          onClick={() => void configureMode("double")}
+        >
+          Double memories
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "front"}
+          className={modeButtonClass("front")}
+          disabled={modeControlsDisabled}
+          onClick={() => void configureMode("front")}
+        >
+          Front
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "back"}
+          className={modeButtonClass("back")}
+          disabled={modeControlsDisabled}
+          onClick={() => void configureMode("back")}
+        >
+          Back
+        </button>
       </div>
 
       <section className="cameraPanel" aria-live="polite">
         {(state === "loading" || state === "camera") && (
           <video ref={videoRef} className={`camera ${cameraFacing === "user" ? "frontCamera" : ""}`} playsInline muted />
         )}
+
+        {capturedOverlayPreview ? (
+          <div className="captureThumb" aria-label="Rear photo captured">
+            <img src={capturedOverlayPreview} alt="Rear preview" />
+            <span>Rear</span>
+          </div>
+        ) : null}
 
         {state === "review" ? (
           reviewSecondary && reviewPrimary ? (
@@ -346,7 +455,7 @@ function App() {
         {state === "error" && <div className="errorMark">{message}</div>}
       </section>
 
-      {message && state !== "error" ? <p className="status">{message}</p> : null}
+      {message && state !== "error" && state !== "success" ? <p className="status">{message}</p> : null}
 
       <div className="actions">
         {state === "camera" && (

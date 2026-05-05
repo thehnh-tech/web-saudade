@@ -56,7 +56,7 @@ button:disabled {
   margin: 0 auto;
   padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto auto minmax(320px, 1fr) auto auto auto;
   gap: 16px;
 }
 
@@ -132,7 +132,8 @@ button:disabled {
 
 .cameraPanel {
   position: relative;
-  min-height: 56svh;
+  min-height: 320px;
+  height: min(56vh, 620px);
   border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
   border-radius: 20px;
   background: #0d0a0b;
@@ -140,6 +141,12 @@ button:disabled {
   display: grid;
   place-items: center;
   box-shadow: 0 10px 24px var(--shadow-color);
+}
+
+@supports (height: 1svh) {
+  .cameraPanel {
+    height: min(56svh, 620px);
+  }
 }
 
 .cameraPanel::before,
@@ -169,7 +176,7 @@ button:disabled {
 .camera {
   width: 100%;
   height: 100%;
-  min-height: 56svh;
+  min-height: 0;
   object-fit: cover;
 }
 
@@ -177,7 +184,7 @@ button:disabled {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 56svh;
+  min-height: 0;
   display: block;
   padding: 0;
   border: 0;
@@ -190,7 +197,7 @@ button:disabled {
   overflow: hidden;
   width: 100%;
   height: 100%;
-  min-height: 56svh;
+  min-height: 0;
   border-radius: 20px;
   background: #120d0f;
   transition: transform 260ms ease, opacity 260ms ease, box-shadow 260ms ease;
@@ -246,6 +253,42 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.captureThumb {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: 12px;
+  overflow: hidden;
+  width: clamp(92px, 30%, 142px);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 248, 246, 0.86);
+  border-radius: 16px;
+  background: #120d0f;
+  box-shadow: 0 12px 28px rgba(13, 10, 11, 0.38);
+}
+
+.captureThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.captureThumb span {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  border-radius: 999px;
+  background: rgba(13, 10, 11, 0.78);
+  padding: 4px 8px;
+  color: var(--primary-foreground);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .frontCamera {
   transform: scaleX(-1);
 }
@@ -253,31 +296,14 @@ button:disabled {
 .successMark,
 .errorMark {
   width: 100%;
-  min-height: 56svh;
+  height: 100%;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 28px;
   text-align: center;
   color: var(--primary-foreground);
   background: #0d0a0b;
-}
-
-.reverseButton {
-  position: absolute;
-  z-index: 3;
-  right: 14px;
-  top: 14px;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(255, 250, 247, 0.92);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  backdrop-filter: blur(10px);
 }
 
 .successMark {
