@@ -8,6 +8,10 @@ type CaptureState = "loading" | "camera" | "review" | "sending" | "success" | "e
 type CaptureMode = "double" | "front" | "back";
 type CameraFacing = "environment" | "user";
 type ReviewSide = "primary" | "secondary";
+type QrInfo = {
+  captureKind?: "client-feed" | "public-feed";
+  purpose?: string;
+};
 
 function tokenFromPath() {
   const match = window.location.pathname.match(/\/capture\/([^/]+)/);
@@ -46,6 +50,10 @@ function waitForVideoDimensions(video: HTMLVideoElement) {
   });
 }
 
+function validEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 function App() {
   const publicToken = useMemo(tokenFromPath, []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -68,6 +76,11 @@ function App() {
   const [secondaryBlob, setSecondaryBlob] = useState<Blob | null>(null);
   const [singleBlob, setSingleBlob] = useState<Blob | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isPublicFeedCapture, setIsPublicFeedCapture] = useState(false);
+  const [showPublicNotice, setShowPublicNotice] = useState(false);
+  const [publicNoticeAccepted, setPublicNoticeAccepted] = useState(false);
+  const [email, setEmail] = useState("");
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
   const clearPreview = useCallback((ref: MutableRefObject<string | null>, setter: (value: string | null) => void) => {
     if (ref.current) {
@@ -223,6 +236,16 @@ function App() {
         setMessage("This QR code is not recognized.");
         return;
       }
+      const qrInfo = await qrResponse.json().catch(() => ({})) as QrInfo;
+      const publicFeedQr = qrInfo.captureKind === "public-feed" || qrInfo.purpose === "public-feed";
+      setIsPublicFeedCapture(publicFeedQr);
+      if (publicFeedQr && !publicNoticeAccepted) {
+        setState("loading");
+        setMessage("Review the public feed notice.");
+        setShowPublicNotice(true);
+        return;
+      }
+      setShowPublicNotice(false);
 
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         setState("error");
@@ -246,7 +269,7 @@ function App() {
       stopCamera();
       clearAllPreviews();
     };
-  }, [clearAllPreviews, configureMode, publicToken, stopCamera]);
+  }, [clearAllPreviews, configureMode, publicNoticeAccepted, publicToken, stopCamera]);
 
   async function capture() {
     if (state !== "camera") return;
@@ -298,6 +321,15 @@ function App() {
 
   async function send() {
     if (state !== "review") return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (isPublicFeedCapture && !validEmail(normalizedEmail)) {
+      setMessage("Enter a valid email to receive your photos.");
+      return;
+    }
+    if (isPublicFeedCapture && !marketingConsent) {
+      setMessage("Consent is required before sending to the public feed.");
+      return;
+    }
     setState("sending");
     setMessage("Sending");
     const form = new FormData();
@@ -323,6 +355,10 @@ function App() {
     form.append("captureSource", "camera-canvas");
     form.append("captureMode", mode);
     form.append("captureTimestamp", new Date().toISOString());
+    if (isPublicFeedCapture) {
+      form.append("email", normalizedEmail);
+      form.append("marketingConsent", "true");
+    }
 
     const response = await fetch(`${API_URL}/api/capture/${publicToken}/upload`, {
       method: "POST",
@@ -331,7 +367,7 @@ function App() {
 
     if (response.ok) {
       setState("success");
-      setMessage("Sent.");
+      setMessage(isPublicFeedCapture ? "Sent. Check your email and watch the homepage feed." : "Sent.");
       stopCamera();
       clearAllPreviews();
       return;
@@ -365,6 +401,7 @@ function App() {
     mode === "double" && stage === "secondary" && (state === "loading" || state === "camera")
       ? primaryPreview
       : null;
+  const canSendPublicFeed = !isPublicFeedCapture || (validEmail(email) && marketingConsent);
 
   return (
     <main className="shell">
@@ -457,6 +494,32 @@ function App() {
 
       {message && state !== "error" && state !== "success" ? <p className="status">{message}</p> : null}
 
+      {isPublicFeedCapture && state === "review" ? (
+        <section className="publicConsentPanel" aria-label="Public feed consent">
+          <label className="emailField">
+            <span>Email for your photo copy</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+            />
+          </label>
+          <label className="consentCheck">
+            <input
+              type="checkbox"
+              checked={marketingConsent}
+              onChange={(event) => setMarketingConsent(event.target.checked)}
+            />
+            <span>
+              By sending, I consent to receive my photos, product offers, promotional emails, and updates related to Picture me by SAUDADE.
+            </span>
+          </label>
+        </section>
+      ) : null}
+
       <div className="actions">
         {state === "camera" && (
           <button className="primary" onClick={capture} disabled={!cameraReady}>
@@ -466,7 +529,7 @@ function App() {
         {state === "review" && (
           <>
             <button className="secondary" onClick={retake}>Retake</button>
-            <button className="primary" onClick={send}>Send</button>
+            <button className="primary" onClick={send} disabled={!canSendPublicFeed}>Send</button>
           </>
         )}
         {state === "sending" && <button className="primary" disabled>Sending...</button>}
@@ -482,6 +545,31 @@ function App() {
           Saudade may remove abusive uploads and block repeated misuse. Do not upload photos that exploit minors, expose private information, or violate someone else's rights.
         </p>
       </details>
+
+      {showPublicNotice ? (
+        <div className="publicNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="public-notice-title">
+          <section className="publicNotice">
+            <p className="noticeKicker">Public sticker QR</p>
+            <h1 id="public-notice-title">Your photo can appear on the SAUDADE homepage.</h1>
+            <p>
+              This special QR publishes captures to the Picture me by SAUDADE public feed on our clothing brand homepage.
+            </p>
+            <p>
+              Any upload that violates our rules is automatically removed from the feed and may be deleted. Do not send sexual, hateful, violent, illegal, harassing, copyrighted, impersonating, or privacy-invasive content.
+            </p>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                setShowPublicNotice(false);
+                setPublicNoticeAccepted(true);
+              }}
+            >
+              I understand
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       <canvas ref={canvasRef} hidden />
     </main>

@@ -323,6 +323,67 @@ button:disabled {
   text-align: center;
 }
 
+.publicConsentPanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  border-radius: 18px;
+  background: rgba(255, 250, 247, 0.84);
+  padding: 14px;
+  box-shadow: 0 10px 24px var(--shadow-color);
+}
+
+.emailField {
+  display: grid;
+  gap: 7px;
+}
+
+.emailField span,
+.consentCheck span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.emailField span {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.emailField input {
+  min-height: 48px;
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  border-radius: 14px;
+  background: #fffaf7;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 15px;
+  padding: 0 14px;
+  outline: none;
+}
+
+.emailField input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.consentCheck {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.consentCheck input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -379,4 +440,53 @@ button:disabled {
 
 .terms p {
   margin: 10px 0 0;
+}
+
+.publicNoticeOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(13, 10, 11, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.publicNotice {
+  width: min(100%, 460px);
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
+  border-radius: 22px;
+  background: #fffaf7;
+  padding: 22px;
+  box-shadow: 0 24px 80px rgba(13, 10, 11, 0.34);
+}
+
+.noticeKicker {
+  margin: 0;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.publicNotice h1 {
+  margin: 12px 0 0;
+  color: var(--foreground);
+  font-size: 28px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.publicNotice p:not(.noticeKicker) {
+  margin: 14px 0 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.publicNotice .primary {
+  width: 100%;
+  margin-top: 20px;
 }
