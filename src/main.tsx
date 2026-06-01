@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const MARKETPLACE_URL = "https://saudade.thehnh.tech";
 
 type CaptureState = "loading" | "camera" | "review" | "sending" | "success" | "error";
 type CaptureMode = "double" | "front" | "back";
@@ -322,12 +323,13 @@ function App() {
   async function send() {
     if (state !== "review") return;
     const normalizedEmail = email.trim().toLowerCase();
-    if (isPublicFeedCapture && !validEmail(normalizedEmail)) {
-      setMessage("Enter a valid email to receive your photos.");
+    const wantsEmail = Boolean(normalizedEmail);
+    if (isPublicFeedCapture && wantsEmail && !validEmail(normalizedEmail)) {
+      setMessage("Enter a valid email or leave it empty.");
       return;
     }
-    if (isPublicFeedCapture && !marketingConsent) {
-      setMessage("Consent is required before sending to the public feed.");
+    if (isPublicFeedCapture && wantsEmail && !marketingConsent) {
+      setMessage("Consent is required only if you want to receive email updates.");
       return;
     }
     setState("sending");
@@ -355,7 +357,7 @@ function App() {
     form.append("captureSource", "camera-canvas");
     form.append("captureMode", mode);
     form.append("captureTimestamp", new Date().toISOString());
-    if (isPublicFeedCapture) {
+    if (isPublicFeedCapture && wantsEmail) {
       form.append("email", normalizedEmail);
       form.append("marketingConsent", "true");
     }
@@ -367,9 +369,12 @@ function App() {
 
     if (response.ok) {
       setState("success");
-      setMessage(isPublicFeedCapture ? "Sent. Check your email and watch the homepage feed." : "Sent.");
+      setMessage(isPublicFeedCapture ? "Sent. Redirecting to SAUDADE." : "Sent.");
       stopCamera();
       clearAllPreviews();
+      if (isPublicFeedCapture) {
+        window.location.assign(MARKETPLACE_URL);
+      }
       return;
     }
 
@@ -401,7 +406,8 @@ function App() {
     mode === "double" && stage === "secondary" && (state === "loading" || state === "camera")
       ? primaryPreview
       : null;
-  const canSendPublicFeed = !isPublicFeedCapture || (validEmail(email) && marketingConsent);
+  const wantsPublicEmail = Boolean(email.trim());
+  const canSendPublicFeed = !isPublicFeedCapture || !wantsPublicEmail || (validEmail(email) && marketingConsent);
 
   return (
     <main className="shell">
@@ -497,7 +503,7 @@ function App() {
       {isPublicFeedCapture && state === "review" ? (
         <section className="publicConsentPanel" aria-label="Public feed consent">
           <label className="emailField">
-            <span>Email for your photo copy</span>
+            <span>Optional email for your photo copy</span>
             <input
               type="email"
               inputMode="email"
@@ -512,9 +518,10 @@ function App() {
               type="checkbox"
               checked={marketingConsent}
               onChange={(event) => setMarketingConsent(event.target.checked)}
+              disabled={!wantsPublicEmail}
             />
             <span>
-              By sending, I consent to receive my photos, product offers, promotional emails, and updates related to Picture me by SAUDADE.
+              If I enter my email, I consent to receive my photos, product offers, promotional emails, and updates related to Picture me by SAUDADE.
             </span>
           </label>
         </section>
