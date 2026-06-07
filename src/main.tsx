@@ -413,10 +413,9 @@ function App() {
     <main className="shell">
       <section className="brand">
         <div className="brandIdentity">
-          <img className="brandIcon" src="/logo.png" alt="" aria-hidden="true" />
           <p>Saudade</p>
         </div>
-        <span>wear the signal</span>
+        <span>live capture</span>
       </section>
 
       <div className="modeSwitch" role="radiogroup" aria-label="Capture mode">
@@ -428,7 +427,7 @@ function App() {
           disabled={modeControlsDisabled}
           onClick={() => void configureMode("double")}
         >
-          Double memories
+          Dual
         </button>
         <button
           type="button"
@@ -556,13 +555,13 @@ function App() {
       {showPublicNotice ? (
         <div className="publicNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="public-notice-title">
           <section className="publicNotice">
-            <p className="noticeKicker">Public sticker QR</p>
-            <h1 id="public-notice-title">Your photo can appear on the SAUDADE homepage.</h1>
+            <p className="noticeKicker">Public · World Feed</p>
+            <h1 id="public-notice-title">Your photo can land on the World Feed.</h1>
             <p>
-              This special QR publishes captures to the Picture me by SAUDADE public feed on our clothing brand homepage.
+              This QR is wired to the public Saudade feed. Captures shared here can appear on saudade.thehnh.tech for the whole world to see.
             </p>
             <p>
-              Any upload that violates our rules is automatically removed from the feed and may be deleted. Do not send sexual, hateful, violent, illegal, harassing, copyrighted, impersonating, or privacy-invasive content.
+              Anything that violates our rules is removed and may be deleted. Do not send sexual, hateful, violent, illegal, harassing, copyrighted, impersonating, or privacy-invasive content.
             </p>
             <button
               type="button"
