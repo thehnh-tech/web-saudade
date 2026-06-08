@@ -357,6 +357,9 @@ function App() {
     form.append("captureSource", "camera-canvas");
     form.append("captureMode", mode);
     form.append("captureTimestamp", new Date().toISOString());
+    if (typeof navigator !== "undefined" && navigator.language) {
+      form.append("captureLocale", navigator.language);
+    }
     if (isPublicFeedCapture && wantsEmail) {
       form.append("email", normalizedEmail);
       form.append("marketingConsent", "true");
